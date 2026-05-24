@@ -7,35 +7,35 @@ import {
   FlatList,
   Image,
   Alert,
+  Dimensions,
+  Vibration,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { styles } from "../styles";
 import { useRef, useState } from "react";
 import { database, auth } from "../firebase";
-import { setDoc, doc, collection, addDoc, increment } from "firebase/firestore";
+import { setDoc, doc, collection, deleteDoc } from "firebase/firestore";
 import { useCollection } from "react-firebase-hooks/firestore";
 import { useFonts } from "expo-font";
 
-import CameraModal from "../components/cameraModal";
 import CustomModal from "../components/customModal";
-import CustomHeader from "../components/customHeader";
 import { RadioButton, Switch } from "react-native-paper";
 
+const windowWidth = Dimensions.get("window").width;
+
 export function CollectionScreen({ navigation, route }) {
-  const [addModalVisible, setAddModalVisible] = useState(false);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [sortModalVisible, setSortModalVisible] = useState(false);
-  const [cameraModalVisible, setCameraModalVisible] = useState(false);
+  const [cardModalVisible, setCardModalVisible] = useState(false);
 
-  const cameraRef = useRef(null);
-  const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const [cardInFront, setCardInFront] = useState(false);
 
   const [loaded] = useFonts({
     Beleren: require("../assets/fonts/Beleren2016-Bold.ttf"),
     Mana: require("../assets/fonts/mana.ttf"),
   });
 
-  const [cardID, setCardID] = useState("cc5eacd7-aaa7-4720-9794-52e7b098c82c");
+  const [modalCard, setModalCard] = useState();
 
   //Search Param object to use for filtering
   const [searchParam, setSearchParams] = useState({
@@ -46,12 +46,14 @@ export function CollectionScreen({ navigation, route }) {
     onlyMultiColor: false,
     onlyColorless: false,
     set_name: "",
+    oracle_text: "",
   });
 
   //Search param holders
   const [searchName, setSearchName] = useState("");
   const [typeLineInput, setTypeLineInput] = useState("");
   const [setNameInput, setSetNameInput] = useState("");
+  const [oracleInput, setOracleInput] = useState("");
 
   const [colorIdentity, setColorIdentity] = useState(false);
 
@@ -86,9 +88,9 @@ export function CollectionScreen({ navigation, route }) {
         case "name":
           comparison = (a.name || "").localeCompare(b.name || "");
           break;
-        
+
         case "manavalue":
-          comparison = (a.manavalue - b.manavalue)
+          comparison = a.manavalue - b.manavalue;
 
         default:
           comparison = 0;
@@ -97,6 +99,7 @@ export function CollectionScreen({ navigation, route }) {
       return ascending ? comparison : comparison * -1;
     };
   }
+
 
   function setSearchParam() {
     var colArr = [];
@@ -107,24 +110,40 @@ export function CollectionScreen({ navigation, route }) {
     if (greenSelected) colArr.push("G");
 
     setSearchParams({
-      name: searchName,
-      type_line: typeLineInput,
+      name: searchName.toLowerCase(),
+      type_line: typeLineInput.toLowerCase(),
       colors: colArr,
       color_identity: false,
       onlyMultiColor: multiColorOnly,
       onlyColorless: colorLessOnly,
-      set_name: "",
+      set_name: setNameInput.toLowerCase(),
+      oracle_text: oracleInput.toLowerCase(),
     });
   }
 
   function matchesSearch(card) {
-    if (!card.name.includes(searchParam.name)) {
+    const search_colors = searchParam.color_identity
+      ? card.color
+      : card.color_identity;
+
+    if (!card.name.toLowerCase().includes(searchParam.name)) {
       return false;
     }
-    if (!card.type_line.includes(searchParam.type_line)) {
+    if (!card.type_line.toLowerCase().includes(searchParam.type_line)) {
+      return false;
+    }
+    if (!card.set_name.toLowerCase().includes(searchParam.set_name)) {
+      return false;
+    }
+    if (!card.oracle_text.toLowerCase().includes(searchParam.oracle_text)) {
       return false;
     }
     if (searchParam.colors.length > 0) {
+      if (
+        card.type_line.includes("Land") &&
+        !searchParam.type_line?.includes("Land")
+      )
+        return false;
       //Color filtering
       if (searchParam.onlyColorless && card.colors.length > 0) return false;
 
@@ -143,346 +162,568 @@ export function CollectionScreen({ navigation, route }) {
     return true;
   }
 
-  function getCoolNess(prices, full_art, foil, rarity) {
-    var coolness = 0;
-    if (foil) {
-      coolness += 1;
-      if (prices.eur_foil > 1) {
-        coolness += 1;
-      }
-      if (prices.eur_foil > 5) {
-        coolness += 1;
-      }
-      if (prices.eur_foil > 10) {
-        coolness += 1;
-      }
-      if (prices.eur_foil > 20) {
-        coolness += 1;
-      }
-      if (prices.eur_foil > 50) {
-        coolness += 1;
-      }
-    } else {
-      if (prices.eur > 1) {
-        coolness += 1;
-      }
-      if (prices.eur > 5) {
-        coolness += 1;
-      }
-      if (prices.eur > 10) {
-        coolness += 1;
-      }
-      if (prices.eur > 20) {
-        coolness += 1;
-      }
-      if (prices.eur > 50) {
-        coolness += 1;
-      }
-    }
-    if (full_art) {
-      coolness += 2;
-    }
-    if (rarity == "uncommon") coolness += 1;
-    if (rarity == "rare") coolness += 3;
-    if (rarity == "mythic") coolness += 5;
+  function displayCardModal(card) {
+    setModalCard(card);
 
-    return coolness;
+    setCardModalVisible(!cardModalVisible);
   }
 
-  async function findAndAddCard() {
-    console.log(cardID);
-
+  async function updateCardAmount(amount) {
     try {
-      //Fetch the card data from scryfall
-      const resp = await fetch("https://api.scryfall.com/cards/" + cardID);
-      //If there was an error in the fetch, abort
-      if (!resp.ok) {
-        throw new Error(`There was an error + ${resp.status}`);
+      if ((amount < 0 && modalCard.amount > 1) || amount > 0) {
+        var id = modalCard.sfID;
+        if (modalCard.foil) {
+          id = id + "-foil";
+        }
+
+        const cardDocRef = doc(
+          database,
+          "Users",
+          auth.currentUser.uid,
+          "collection",
+          id,
+        );
+
+        modalCard.amount += amount;
+
+        const docRef = await setDoc(cardDocRef, modalCard, { merge: true });
       }
+    } catch (error) {
+      console.log(error);
+    }
+  }
 
-      const data = await resp.json();
-
-      //Create a card entry with relevant information
-      const cardEntry = {
-        sfID: data.id,
-        name: data.name,
-        type_line: data.type_line,
-        colors: data.colors,
-        color_identity: data.color_identity,
-        set: data.set,
-        set_name: data.set_name,
-        manavalue: data.cmc,
-        images: {
-          normal: data.image_uris.normal,
-          art_crop: data.image_uris.art_crop,
-        },
-        rarity: data.rarity,
-        full_art: data.full_art,
-        prices: {
-          non_foil: data.prices.eur,
-          foil: data.prices.eur_foil,
-        },
-        amount: increment(1),
-        foil: false,
-        coolness: getCoolNess(data.prices, data.full_art, false, data.rarity),
-      };
+  async function tryDeleteCard() {
+    try {
+      var id = modalCard.sfID;
+      if (modalCard.foil) {
+        id = id + "-foil";
+      }
 
       const cardDocRef = doc(
         database,
         "Users",
         auth.currentUser.uid,
         "collection",
-        cardID,
+        id,
       );
 
-      const docRef = await setDoc(cardDocRef, cardEntry, { merge: true });
-
-      console.log(docRef);
+      deleteDoc(cardDocRef);
     } catch (error) {
       console.log(error);
     }
+    setCardModalVisible(!cardModalVisible);
   }
 
-  function testAlert(){
-    
+  async function deleteModalCard() {
+    Alert.alert(
+      "Delete?",
+      "Are you sure you want to Delete " + modalCard?.name + "?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Confirm",
+          style: "destructive",
+          onPress: () => tryDeleteCard(),
+        },
+      ],
+    );
   }
 
-  const handleCapture = async()=>{
-    console.log("Clicked the capture button")
-    if(cameraRef.current && !isProcessingImage){
-      console.log("something")
-      try{
-        setIsProcessingImage(true)
-        const photo = await cameraRef.current.takePictureAsync({
-          quality: 0.8,
-          skipProcessing: true
-        });
+  function renderListItem(item) {
+    const margin = 5;
+    const borderWidth = 2;
+    const boxWidth = (windowWidth - 20 - margin * 2) / 3;
+    const imageWidth = boxWidth - borderWidth * 2;
+    const imageHeight = imageWidth * 1.4;
 
-        const formdata = new FormData()
-        formdata.append('file', {
-          uri: photo.uri,
-          name: 'card.jpg',
-          type: 'image/jpeg'
-        })
+    return (
+      <Pressable
+        style={{
+          height: "auto",
+          width: boxWidth,
+          padding: 0,
+          marginRight: margin,
+          marginBottom: margin,
+          borderWidth: borderWidth,
+          borderColor: "#333333",
+          borderRadius: 5,
+          backgroundColor: "#333333",
+        }}
+        onPress={() => displayCardModal(item)}
+      >
+        {item.foil ? (
+          <Image
+            source={require("../assets/images/rainbow_coloured_hologram_background_2409.jpg")}
+            style={{
+              position: "absolute",
+              zIndex: 5,
+              width: imageWidth,
+              height: imageHeight,
+              borderRadius: 5,
+              resizeMode: "cover",
+              mixBlendMode: "overlay",
+            }}
+          />
+        ) : null}
+        {item.faces ? (
+          <View
+            style={{
+              width: imageWidth,
+              height: imageHeight,
+            }}
+          >
+            <Image
+              source={{ uri: item.faces[0].images.small }}
+              style={{
+                backgroundColor: "black",
+                width: imageWidth - 10,
+                height: imageHeight - 14,
+                borderRadius: 4,
+                zIndex: 2,
+              }}
+            />
+            <Image
+              source={{ uri: item.faces[1].images.small }}
+              style={{
+                backgroundColor: "black",
+                width: imageWidth - 10,
+                height: imageHeight - 14,
+                borderRadius: 4,
+                position: "absolute",
+                right: 0,
+                bottom: 0,
+              }}
+            />
+          </View>
+        ) : (
+          <Image
+            source={{ uri: item.images.small }}
+            style={{
+              backgroundColor: "black",
+              width: imageWidth,
+              height: imageHeight,
+              borderRadius: 5,
+            }}
+          />
+        )}
 
-        const resp = await fetch("http://192.168.0.169:8000/getId/",{
-          method:'POST',
-          body: formdata,
-          headers: {'Content-Type':'multipart/form-data'}
-        })
-
-        const data = await resp.json()
-
-        setCardID(data.ScryfallID.points[0].payload.scryfall_id)
-        findAndAddCard()
-      }catch(error){
-        alert(error)
-      }
-      setIsProcessingImage(false)
-    }
+        <View style={styles.cardInfo}>
+          <Text style={styles.cardName}>{item.name}</Text>
+          <Text style={styles.textLight}>
+            {item.foil
+              ? item.prices.foil
+                ? item.prices.foil
+                : "N/A"
+              : item.prices.non_foil
+                ? item.prices.non_foil
+                : "N/A"}{" "}
+            €
+          </Text>
+          <Text style={styles.textLight}>amount: {item.amount}</Text>
+        </View>
+      </Pressable>
+    );
   }
 
   return (
-    <SafeAreaView>
-      <CustomHeader
-        onLeftPress={() => navigation.goBack()}
-        leftLabel={"back"}
-        title={"Collection"}
-        onRightPress={() => navigation.navigate("Profile")}
-        rightLabel={"profile"}
-      />
-
-      <View>
-        <View style={styles.rowView}>
-          <Pressable onPress={() => setFilterModalVisible(!filterModalVisible)}>
-            <Text style={{ fontFamily: "Beleren" }}>Search</Text>
+    <SafeAreaView style={[styles.background]}>
+      <View style={styles.content}>
+        <View style={[styles.rowView, styles.collectionControls]}>
+          <Pressable
+            style={[
+              styles.button.base,
+              styles.button.shadow,
+              styles.button.large,
+            ]}
+            onPress={() => setFilterModalVisible(!filterModalVisible)}
+          >
+            <Text style={styles.buttonText}>Search</Text>
           </Pressable>
-          <Pressable onPress={() => setSortModalVisible(!sortModalVisible)}>
-            <Text style={{ fontFamily: "Beleren" }}>Sort</Text>
+          <Pressable
+            style={[
+              styles.button.base,
+              styles.button.shadow,
+              styles.button.large,
+            ]}
+            onPress={() => setSortModalVisible(!sortModalVisible)}
+          >
+            <Text style={styles.buttonText}>Sort</Text>
           </Pressable>
         </View>
-        <Pressable onPress={() => setCameraModalVisible(!cameraModalVisible)}>
-          <Text>Add</Text>
-        </Pressable>
-      </View>
-      <FlatList
-        data={sortedData}
-        style={{
-          flex: 1,
-          minHeight: 720,
-          padding: 3,
-        }}
-        keyExtractor={(item) => item.sfID}
-        renderItem={({ item }) => {
-          console.log(item);
-          return (
-            <View style={{ height: 520, width: "100%", marginBottom: 10 }}>
-              <Image
-                source={{ uri: item.images.normal }}
+        <FlatList
+          data={sortedData}
+          style={{
+            flex: 1,
+            minHeight: 720,
+          }}
+          keyExtractor={(item) => item.sfID}
+          numColumns={3}
+          renderItem={(item) => renderListItem(item.item)}
+          contentContainerStyle={{ paddingBottom: 90 }}
+        />
+        <CustomModal
+          visible={sortModalVisible}
+          onClose={() => setSortModalVisible(false)}
+        >
+          <Switch
+            value={ascending}
+            onValueChange={() => setAscending(!ascending)}
+          />
+          <Text>Ascending?</Text>
+          <View>
+            <View style={styles.rowView}>
+              <RadioButton
+                value="name"
+                status={sortChoice === "name" ? "checked" : "unchecked"}
+                onPress={() => setSortChoice("name")}
+              />
+              <Text>Name</Text>
+            </View>
+            <View style={styles.rowView}>
+              <RadioButton
+                value="manavalue"
+                status={sortChoice === "manavalue" ? "checked" : "unchecked"}
+                onPress={() => setSortChoice("manavalue")}
+              />
+              <Text>mana cost</Text>
+            </View>
+          </View>
+        </CustomModal>
+
+        <CustomModal
+          visible={filterModalVisible}
+          onClose={() => setFilterModalVisible(false)}
+        >
+          <TextInput
+            value={searchName}
+            onChangeText={setSearchName}
+            placeholder="Card name"
+            style={styles.textInput}
+          />
+          <TextInput
+            value={typeLineInput}
+            onChangeText={setTypeLineInput}
+            placeholder="Type line"
+            style={styles.textInput}
+          />
+          <TextInput
+            value={setNameInput}
+            onChangeText={setSetNameInput}
+            placeholder="Set name"
+            style={styles.textInput}
+          />
+          <TextInput
+            value={oracleInput}
+            onChangeText={setOracleInput}
+            placeholder="Oracle text"
+            style={styles.textInput}
+          />
+
+          <Text style={styles.cardName}>Select colors:</Text>
+          <View style={styles.rowView}>
+            <Pressable onPress={() => setWhiteSelected(!whiteSelected)}>
+              <View
                 style={{
-                  flex: 1,
-                  width: "100%",
-                  resizeMode: "contain",
-                  marginBottom: 3,
+                  backgroundColor: whiteSelected
+                    ? "rgb(248, 231, 185)"
+                    : "#494949ff",
+                  borderRadius: 100,
+                  shadowColor: "black",
+                  shadowOpacity: 1,
+                  shadowOffset: { width: -2, height: 2 },
+                  shadowRadius: 0.8,
+                  padding: 1,
+                }}
+              >
+                <Text
+                  style={{
+                    fontFamily: "Mana",
+                    color: whiteSelected ? "rgb(249,250,244)" : "gray",
+                    fontSize: 40,
+                    padding: 5,
+                    shadowColor: "black",
+                    shadowOpacity: 0.5,
+                    shadowOffset: { width: -0.5, height: 0.5 },
+                    shadowRadius: 1,
+                  }}
+                >
+                  
+                </Text>
+              </View>
+            </Pressable>
+            <Pressable onPress={() => setBlueSelected(!blueSelected)}>
+              <View
+                style={{
+                  backgroundColor: blueSelected
+                    ? "rgb(179, 206, 234)"
+                    : "#494949ff",
+                  borderRadius: 100,
+                  shadowColor: "black",
+                  shadowOpacity: 1,
+                  shadowOffset: { width: -2, height: 2 },
+                  shadowRadius: 0.8,
+                  padding: 1,
+                }}
+              >
+                <Text
+                  style={{
+                    fontFamily: "Mana",
+                    color: blueSelected ? "rgb(14, 104, 171)" : "gray",
+                    fontSize: 40,
+                    padding: 5,
+                    shadowColor: "black",
+                    shadowOpacity: 0.5,
+                    shadowOffset: { width: -0.5, height: 0.5 },
+                    shadowRadius: 1,
+                  }}
+                >
+                  
+                </Text>
+              </View>
+            </Pressable>
+            <Pressable onPress={() => setBlackSelected(!blackSelected)}>
+              <View
+                style={{
+                  backgroundColor: blackSelected
+                    ? "rgb(166, 159, 157)"
+                    : "#494949ff",
+                  borderRadius: 100,
+                  shadowColor: "black",
+                  shadowOpacity: 1,
+                  shadowOffset: { width: -2, height: 2 },
+                  shadowRadius: 0.8,
+                  padding: 1,
+                }}
+              >
+                <Text
+                  style={{
+                    fontFamily: "Mana",
+                    color: blackSelected ? "rgb(21,11,0)" : "gray",
+                    fontSize: 40,
+                    padding: 5,
+                    shadowColor: "black",
+                    shadowOpacity: 0.5,
+                    shadowOffset: { width: -0.5, height: 0.5 },
+                    shadowRadius: 1,
+                  }}
+                >
+                  
+                </Text>
+              </View>
+            </Pressable>
+            <Pressable onPress={() => setRedSelected(!redSelected)}>
+              <View
+                style={{
+                  backgroundColor: redSelected
+                    ? "rgb(235, 159, 130)"
+                    : "#494949ff",
+                  borderRadius: 100,
+                  shadowColor: "black",
+                  shadowOpacity: 1,
+                  shadowOffset: { width: -2, height: 2 },
+                  shadowRadius: 0.8,
+                  padding: 1,
+                }}
+              >
+                <Text
+                  style={{
+                    fontFamily: "Mana",
+                    color: redSelected ? "rgb(211,32,42)" : "gray",
+                    fontSize: 40,
+                    padding: 5,
+                    shadowColor: "black",
+                    shadowOpacity: 0.5,
+                    shadowOffset: { width: -0.5, height: 0.5 },
+                    shadowRadius: 1,
+                  }}
+                >
+                  
+                </Text>
+              </View>
+            </Pressable>
+            <Pressable onPress={() => {setGreenSelected(!greenSelected);}}>
+              <View
+                style={{
+                  backgroundColor: greenSelected
+                    ? "rgb(196, 211, 202)"
+                    : "#494949ff",
+                  borderRadius: 100,
+                  shadowColor: "black",
+                  shadowOpacity: 1,
+                  shadowOffset: { width: -2, height: 2 },
+                  shadowRadius: 0.8,
+                  padding: 1,
+                }}
+              >
+                <Text
+                  style={{
+                    fontFamily: "Mana",
+                    color: greenSelected ? "rgb(0,115,62)" : "gray",
+                    fontSize: 40,
+                    padding: 5,
+                    shadowColor: "black",
+                    shadowOpacity: 0.5,
+                    shadowOffset: { width: 0, height: 0.7 },
+                    shadowRadius: 0.3,
+                  }}
+                >
+                  
+                </Text>
+              </View>
+            </Pressable>
+          </View>
+          <View style={styles.rowView}>
+            <View style={styles.colorFilterSwitchBox}>
+              <Switch
+                value={colorIdentity}
+                onValueChange={() => setColorIdentity(!colorIdentity)}
+                style={styles.colorSwitch}
+                borderWidth={1}
+                borderColor="white"
+                borderRadius={100}
+              />
+              <Text style={[styles.cardName, { textAlign: "center" }]}>
+                Color or Color identity?
+              </Text>
+            </View>
+            <View style={styles.colorFilterSwitchBox}>
+              <Switch
+                value={colorLessOnly}
+                onValueChange={() => setColorLessOnly(!colorLessOnly)}
+                style={styles.colorSwitch}
+                borderWidth={1}
+                borderColor="white"
+                borderRadius={100}
+              />
+              <Text style={[styles.cardName, { textAlign: "center" }]}>
+                Colorless only?
+              </Text>
+            </View>
+
+            <View style={styles.colorFilterSwitchBox}>
+              <Switch
+                value={multiColorOnly}
+                onValueChange={() => setMultiColorOnly(!multiColorOnly)}
+                style={styles.colorSwitch}
+                borderWidth={1}
+                borderColor="white"
+                borderRadius={100}
+              />
+              <Text style={[styles.cardName, { textAlign: "center" }]}>
+                Multicolor only?
+              </Text>
+            </View>
+          </View>
+
+          <View style={[styles.rowView, {marginTop: 10}]}>
+            <Pressable
+              style={styles.button.base}
+              onPress={() => setSearchParam()}
+            >
+              <Text style={styles.buttonText}>Set search criteria</Text>
+            </Pressable>
+          </View>
+        </CustomModal>
+
+        <CustomModal
+          visible={cardModalVisible}
+          onClose={() => setCardModalVisible(!cardModalVisible)}
+        >
+          {modalCard?.foil ? (
+            <Image
+              pointerEvents="none"
+              source={require("../assets/images/rainbow_coloured_hologram_background_2409.jpg")}
+              style={{
+                left: 10,
+                top: 10,
+                zIndex: 2,
+                mixBlendMode: "overlay",
+                position: "absolute",
+                height: 418,
+                width: "90%",
+                margin: "5%",
+                marginTop: "3.2%",
+                borderRadius: 11,
+              }}
+            />
+          ) : null}
+          {modalCard?.faces ? (
+            <Pressable
+              style={{
+                height: 418,
+                width: "90%",
+                margin: "5%",
+              }}
+              onPress={() => {
+                setCardInFront(!cardInFront);
+              }}
+            >
+              <Image
+                source={{ uri: modalCard?.faces[0].images.normal }}
+                style={{
+                  height: 375,
+                  width: "90%",
+                  borderRadius: 12,
+                  boxShadow: "3px 3px 10px #00000076",
+                  zIndex: cardInFront ? -1 : 2,
                 }}
               />
+              <Image
+                source={{ uri: modalCard?.faces[1].images.normal }}
+                style={{
+                  height: 375,
+                  width: "90%",
+                  borderRadius: 12,
+                  boxShadow: "3px 3px 10px #00000076",
+                  position: "absolute",
+                  right: 0,
+                  bottom: 0,
+                }}
+              />
+            </Pressable>
+          ) : (
+            <Image
+              source={{ uri: modalCard?.images.normal }}
+              style={{
+                height: 418,
+                width: "90%",
+                margin: "5%",
+                borderRadius: 12,
+                boxShadow: "3px 3px 10px #00000076",
+              }}
+            />
+          )}
+          <View style={styles.rowView}>
+            <Text style={[styles.cardName]}>{modalCard?.name}</Text>
+          </View>
+          <View style={styles.rowView}>
+            <View style={styles.amountControl.container}>
+              <Pressable
+                style={styles.amountControl.button}
+                onPress={() => updateCardAmount(-1)}
+              >
+                <Text>-</Text>
+              </Pressable>
+              <Text style={styles.amountControl.amount}>
+                {modalCard?.amount}
+              </Text>
+              <Pressable
+                style={styles.amountControl.button}
+                onPress={() => updateCardAmount(+1)}
+              >
+                <Text>+</Text>
+              </Pressable>
             </View>
-          );
-        }}
-      />
-      <CustomModal
-        visible={addModalVisible}
-        onClose={() => setAddModalVisible(false)}
-      >
-        <TextInput
-          value={cardID}
-          onChangeText={setCardID}
-          style={styles.textInput}
-        />
-        <Pressable onPress={() => findAndAddCard()}>
-          <Text>add Card by Scryfall ID</Text>
-        </Pressable>
-      </CustomModal>
-      <CustomModal
-        visible={sortModalVisible}
-        onClose={() => setSortModalVisible(false)}
-      >
-        <Switch
-          value={ascending}
-          onValueChange={() => setAscending(!ascending)}
-        />
-        <Text>Ascending?</Text>
-        <View>
-          <View style={styles.rowView}>
-            <RadioButton
-              value="name"
-              status={sortChoice === "name" ? "checked" : "unchecked"}
-              onPress={() => setSortChoice("name")}
-            />
-            <Text>Name</Text>
+            <Pressable
+              style={[styles.button.base, styles.button.danger]}
+              onPress={() => deleteModalCard()}
+            >
+              <Text>Delete</Text>
+            </Pressable>
           </View>
-          <View style={styles.rowView}>
-            <RadioButton
-              value="manavalue"
-              status={sortChoice === "manavalue" ? "checked" : "unchecked"}
-              onPress={() => setSortChoice("manavalue")}
-            />
-            <Text>mana cost</Text>
-          </View>
-        </View>
-      </CustomModal>
-
-      <CustomModal
-        visible={filterModalVisible}
-        onClose={() => setFilterModalVisible(false)}
-      >
-        <TextInput
-          value={searchName}
-          onChangeText={setSearchName}
-          placeholder="Card name"
-          style={styles.textInput}
-        />
-        <TextInput
-          value={typeLineInput}
-          onChangeText={setTypeLineInput}
-          placeholder="Type line"
-          style={styles.textInput}
-        />
-        <TextInput
-          value={setNameInput}
-          onChangeText={setSetNameInput}
-          placeholder="Set name"
-          style={styles.textInput}
-        />
-        <Text>Color or Color identity?</Text>
-        <Switch
-          value={colorIdentity}
-          onValueChange={() => setColorIdentity(!colorIdentity)}
-        />
-        <Text>Select colors:</Text>
-        <View style={styles.rowView}>
-          <Pressable onPress={() => setWhiteSelected(!whiteSelected)}>
-            <Text
-              style={{
-                fontFamily: "Mana",
-                color: whiteSelected ? "yellow" : "gray",
-                fontSize: 30,
-                padding: 5,
-              }}
-            >
-              
-            </Text>
-          </Pressable>
-          <Pressable onPress={() => setBlueSelected(!blueSelected)}>
-            <Text
-              style={{
-                fontFamily: "Mana",
-                color: blueSelected ? "blue" : "gray",
-                fontSize: 30,
-                padding: 5,
-              }}
-            >
-              
-            </Text>
-          </Pressable>
-          <Pressable onPress={() => setBlackSelected(!blackSelected)}>
-            <Text
-              style={{
-                fontFamily: "Mana",
-                color: blackSelected ? "black" : "gray",
-                fontSize: 30,
-                padding: 5,
-              }}
-            >
-              
-            </Text>
-          </Pressable>
-          <Pressable onPress={() => setRedSelected(!redSelected)}>
-            <Text
-              style={{
-                fontFamily: "Mana",
-                color: redSelected ? "red" : "gray",
-                fontSize: 30,
-                padding: 5,
-              }}
-            >
-              
-            </Text>
-          </Pressable>
-          <Pressable onPress={() => setGreenSelected(!greenSelected)}>
-            <Text
-              style={{
-                fontFamily: "Mana",
-                color: greenSelected ? "green" : "gray",
-                fontSize: 30,
-                padding: 5,
-              }}
-            >
-              
-            </Text>
-          </Pressable>
-        </View>
-        <Text>Colorless only?</Text>
-        <Switch
-          value={colorLessOnly}
-          onValueChange={() => setColorLessOnly(!colorLessOnly)}
-        />
-        <Text>Multicolor only?</Text>
-        <Switch
-          value={multiColorOnly}
-          onValueChange={() => setMultiColorOnly(!multiColorOnly)}
-        />
-        <Pressable onPress={() => setSearchParam()}>
-          <Text>Set search criteria</Text>
-        </Pressable>
-      </CustomModal>
-      <CameraModal 
-      visible={cameraModalVisible} 
-      onClose={()=>setCameraModalVisible(!cameraModalVisible)}
-      captureFunction={handleCapture}
-      camRef={cameraRef}>
-          
-      </CameraModal>
+        </CustomModal>
+      </View>
     </SafeAreaView>
   );
 }

@@ -5,11 +5,11 @@ import react from "react";
 
 const CustomModal = ({ visible, onClose, children }) => {
   return (
-    <Modal visible={visible} animationType="slide" transparent={true}>
-      <View style={styles.centerContent}>
+    <Modal visible={visible} animationType="fade" transparent={true}>
+      <View onPress={onClose} style={[styles.centerContent, styles.modalBackGround]}>
         <View style={styles.modalBox}>
-          <Pressable onPress={onClose}>
-            <Text style={styles.closeText}>Close</Text>
+          <Pressable onPress={onClose} style={[styles.button.base, styles.button.close]}>
+            <Text style={styles.buttonText}>Close</Text>
           </Pressable>
 
           {children}
