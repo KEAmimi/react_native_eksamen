@@ -20,7 +20,7 @@ import CustomModal from "../components/customModal.js";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
 export function HomeScreen({ navigation, route }) {
-  //Loading collecion of cards!
+  //Loading collecion of cards
   const [values, loading, error] = useCollection(
     collection(database, "Users", auth.currentUser.uid, "collection"),
   );
