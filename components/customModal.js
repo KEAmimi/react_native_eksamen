@@ -4,6 +4,8 @@ import { styles } from "../styles";
 import react from "react";
 
 const CustomModal = ({ visible, onClose, children }) => {
+
+  
   return (
     <Modal visible={visible} animationType="fade" transparent={true}>
       <View onPress={onClose} style={[styles.centerContent, styles.modalBackGround]}>

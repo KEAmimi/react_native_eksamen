@@ -13,7 +13,6 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { HomeScreen, ProfileScreen } from "./pages/userPages.js";
 import { LoginScreen, RegisterScreen } from "./pages/loginRegister.js";
 import { CollectionScreen } from "./pages/collection.js";
-import cameraPageTest from "./pages/cameraTestPage.js";
 import ScanPage from "./pages/scanpage.js";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { useFonts } from "expo-font";
@@ -87,7 +86,6 @@ export default function App() {
             // --- App Stack (User is logged in) ---
             <>
               <Stack.Screen name="MainTabs" component={AppTabs}/>
-              <Stack.Screen name="Camera" component={cameraPageTest} />
             </>
           ) : (
             // --- Auth Stack (User is NOT logged in) ---

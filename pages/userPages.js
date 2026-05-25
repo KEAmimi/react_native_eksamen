@@ -8,15 +8,16 @@ import {
   Alert,
   Image,
 } from "react-native";
-import { app, database, auth } from "../firebase.js";
+import { app, database, auth, storage } from "../firebase.js";
 import { styles } from "../styles.js";
 import { useCollection } from "react-firebase-hooks/firestore";
-import { collection, doc, getDoc } from "firebase/firestore";
+import { collection, doc, getDoc, setDoc } from "firebase/firestore";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import CustomHeader from "../components/customHeader.js";
-import CustomFooter from "../components/customFooter.js";
 import { useFocusEffect } from "@react-navigation/native";
+import * as ImagePicker from "expo-image-picker";
+import CustomModal from "../components/customModal.js";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
 export function HomeScreen({ navigation, route }) {
   //Loading collecion of cards
@@ -173,6 +174,10 @@ export function HomeScreen({ navigation, route }) {
 
 export function ProfileScreen({ navigation, route }) {
   const [currentUserInfo, setCurrentUserInfo] = useState();
+  const [profileImageModalVisible, setProfileImageModalVisible] =
+    useState(false);
+  const image = currentUserInfo?.profilePhotoUri;
+  const [reloadTrigger, setReloadTrigger] = useState(false)
 
   useFocusEffect(
     useCallback(() => {
@@ -200,7 +205,7 @@ export function ProfileScreen({ navigation, route }) {
       return () => {
         //Cleanup optional
       };
-    }, [auth.currentUser]),
+    }, [auth.currentUser, reloadTrigger]),
   );
 
   async function logout() {
@@ -208,6 +213,48 @@ export function ProfileScreen({ navigation, route }) {
       { text: "cancel", style: "cancel" },
       { text: "Logout", style: "destructive", onPress: () => auth.signOut() },
     ]);
+  }
+
+  async function getNewProfileImage() {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+    });
+    if (!result.canceled) {
+      console.log("An image was selected")
+      const uri = result.assets[0].uri;
+      const nameFromUri = uri.split("/").pop();
+      const filename = "images/" + nameFromUri;
+
+      await uploadImage(uri, filename)
+      const firebaseUrl = await getDownloadURL(ref(storage, filename))
+      const userRef = doc(database, "Users", auth.currentUser.uid)
+
+      const updatedUser = {
+        profilePhotoUri: firebaseUrl
+      }
+
+      await setDoc(userRef, updatedUser, {merge:true})
+      setReloadTrigger(!reloadTrigger)
+    }
+    try {
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
+  async function uploadImage(uri, filename){
+    const res = await fetch(uri)
+    const blob = await res.blob()
+    const storageRef = ref(storage, filename)
+    console.log(blob.type)
+
+    try{
+      await uploadBytes(storageRef, blob, {contentType:'image/jpeg'}).then((snap)=>{
+        console.log("billede uploadet")
+      })
+    }catch(error){
+      console.log(error)
+    }
   }
 
   return (
@@ -232,7 +279,12 @@ export function ProfileScreen({ navigation, route }) {
                 borderRadius: 50,
               }}
             />
-            <Pressable>
+            <Pressable
+              style={[styles.button.base, { alignSelf: "center" }]}
+              onPress={() =>
+                setProfileImageModalVisible(!profileImageModalVisible)
+              }
+            >
               <Text style={styles.textLight}>
                 Upload/change Profile picture
               </Text>
@@ -251,6 +303,25 @@ export function ProfileScreen({ navigation, route }) {
         >
           <Text style={styles.buttonText}>logout</Text>
         </Pressable>
+        <CustomModal
+          visible={profileImageModalVisible}
+          onClose={() => setProfileImageModalVisible(!profileImageModalVisible)}
+        >
+          <View style={{gap: 20}}>
+              <Image
+            source={{
+              uri:
+                currentUserInfo?.profilePhotoUri ||
+                "https://firebasestorage.googleapis.com/v0/b/reactnative-a55ad.firebasestorage.app/o/profilePics%2FScreenshot%202026-05-22%20at%2016.30.56.png?alt=media&token=28e1acec-99a9-441d-ab19-f6a257336d5f",
+            }}
+            style={{ width: 300, height: 300, borderRadius: 200, alignSelf: 'center' }}
+          />
+          <Pressable style={[styles.button.base, {alignSelf: 'center'}]} onPress={() => getNewProfileImage()}>
+            <Text style={styles.cardName}>Select new profile image</Text>
+          </Pressable>
+          </View>
+          
+        </CustomModal>
       </View>
     </SafeAreaView>
   );

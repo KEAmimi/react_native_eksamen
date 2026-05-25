@@ -259,6 +259,12 @@ export const styles = StyleSheet.create({
   profilePicBox:{
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 5
+    gap: 10
   },
+  sortingBlock:{
+    borderColor: 'white',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10
+  }
 });

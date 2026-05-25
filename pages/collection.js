@@ -17,6 +17,7 @@ import { database, auth } from "../firebase";
 import { setDoc, doc, collection, deleteDoc } from "firebase/firestore";
 import { useCollection } from "react-firebase-hooks/firestore";
 import { useFonts } from "expo-font";
+import SortPressable from "../components/sortPressable";
 
 import CustomModal from "../components/customModal";
 import { RadioButton, Switch } from "react-native-paper";
@@ -68,7 +69,9 @@ export function CollectionScreen({ navigation, route }) {
 
   //Sorting hooks
   const [sortChoice, setSortChoice] = useState("name");
-  const [ascending, setAscending] = useState(false);
+  const [ascending, setAscending] = useState(true);
+  const sortActive = "#5b5b5bff";
+  const sortInActive = "#474747ff";
 
   const [values, loading, error] = useCollection(
     collection(database, "Users", auth.currentUser.uid, "collection"),
@@ -89,8 +92,13 @@ export function CollectionScreen({ navigation, route }) {
           comparison = (a.name || "").localeCompare(b.name || "");
           break;
 
-        case "manavalue":
+        case "mana":
           comparison = a.manavalue - b.manavalue;
+          break;
+
+        case "coolness":
+          comparison = a.coolness - b.coolness;
+          break;
 
         default:
           comparison = 0;
@@ -99,7 +107,6 @@ export function CollectionScreen({ navigation, route }) {
       return ascending ? comparison : comparison * -1;
     };
   }
-
 
   function setSearchParam() {
     var colArr = [];
@@ -366,28 +373,73 @@ export function CollectionScreen({ navigation, route }) {
           visible={sortModalVisible}
           onClose={() => setSortModalVisible(false)}
         >
-          <Switch
-            value={ascending}
-            onValueChange={() => setAscending(!ascending)}
-          />
-          <Text>Ascending?</Text>
-          <View>
-            <View style={styles.rowView}>
-              <RadioButton
-                value="name"
-                status={sortChoice === "name" ? "checked" : "unchecked"}
-                onPress={() => setSortChoice("name")}
-              />
-              <Text>Name</Text>
-            </View>
-            <View style={styles.rowView}>
-              <RadioButton
-                value="manavalue"
-                status={sortChoice === "manavalue" ? "checked" : "unchecked"}
-                onPress={() => setSortChoice("manavalue")}
-              />
-              <Text>mana cost</Text>
-            </View>
+          <View style={{ gap: 10 }}>
+            <SortPressable
+              onPress={() => {
+                setAscending(true);
+                setSortChoice("name");
+              }}
+              sortChoice={sortChoice}
+              ascendingStatus={ascending}
+              title="Name A-Z"
+              desiredSort="name"
+              desiredAsc={true}
+            />
+            <SortPressable
+              onPress={() => {
+                setAscending(false);
+                setSortChoice("name");
+              }}
+              sortChoice={sortChoice}
+              ascendingStatus={ascending}
+              title="Name Z-A"
+              desiredSort="name"
+              desiredAsc={false}
+            />
+            <SortPressable
+              onPress={() => {
+                setAscending(true);
+                setSortChoice("mana");
+              }}
+              sortChoice={sortChoice}
+              ascendingStatus={ascending}
+              title="Mana low-high"
+              desiredSort="mana"
+              desiredAsc={true}
+            />
+            <SortPressable
+              onPress={() => {
+                setAscending(false);
+                setSortChoice("mana");
+              }}
+              sortChoice={sortChoice}
+              ascendingStatus={ascending}
+              title="Mana high-low"
+              desiredSort="mana"
+              desiredAsc={false}
+            />
+            <SortPressable
+              onPress={() => {
+                setAscending(false);
+                setSortChoice("coolness");
+              }}
+              sortChoice={sortChoice}
+              ascendingStatus={ascending}
+              title="Coolness high to low"
+              desiredSort="coolness"
+              desiredAsc={false}
+            />
+            <SortPressable
+              onPress={() => {
+                setAscending(true);
+                setSortChoice("coolness");
+              }}
+              sortChoice={sortChoice}
+              ascendingStatus={ascending}
+              title="Coolness low to high"
+              desiredSort="coolness"
+              desiredAsc={true}
+            />
           </View>
         </CustomModal>
 
@@ -542,7 +594,11 @@ export function CollectionScreen({ navigation, route }) {
                 </Text>
               </View>
             </Pressable>
-            <Pressable onPress={() => {setGreenSelected(!greenSelected);}}>
+            <Pressable
+              onPress={() => {
+                setGreenSelected(!greenSelected);
+              }}
+            >
               <View
                 style={{
                   backgroundColor: greenSelected
@@ -616,7 +672,7 @@ export function CollectionScreen({ navigation, route }) {
             </View>
           </View>
 
-          <View style={[styles.rowView, {marginTop: 10}]}>
+          <View style={[styles.rowView, { marginTop: 10 }]}>
             <Pressable
               style={styles.button.base}
               onPress={() => setSearchParam()}
