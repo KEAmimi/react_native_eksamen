@@ -7,7 +7,7 @@ An app for managing your magic the gathering collection
 * Install the packages in package.json
 * Run the app with "npx expo"
 * download the "Expo Go" app to your phone
-* To use the scanning feature:
+* If the scanning feature is not working (The remote API may be down):
   * Set up the API from the following github repo: https://github.com/safirestorm/UrzasLittleHelper
   * run it with fastapi dev API.py --host 0.0.0.0
   * Identify your local network IP adress
