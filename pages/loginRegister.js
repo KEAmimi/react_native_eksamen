@@ -62,9 +62,9 @@ export function RegisterScreen({navigation, route}) {
       <View style={styles.centerContent}>
         <View style={styles.loginBox}>
           <Text style={styles.boxTitle}>Sign Up</Text>
-          <TextInput style={styles.textInput} value={userNameInput} onChangeText={setUserNameInput} placeholder="Display name"/>
-          <TextInput style={styles.textInput} value={emailInput} onChangeText={setEmailInput} placeholder="Email"/>
-          <TextInput style={styles.textInput} value={passWordInput} onChangeText={setPasswordInput} placeholder="Password"/>
+          <TextInput autoCapitalize="none" autoCorrect={false}  style={styles.textInput} value={userNameInput} onChangeText={setUserNameInput} placeholder="Display name"/>
+          <TextInput autoCapitalize="none"  autoCorrect={false} style={styles.textInput} value={emailInput} onChangeText={setEmailInput} placeholder="Email"/>
+          <TextInput autoCapitalize="none" secureTextEntry={true} autoCorrect={false} style={styles.textInput} value={passWordInput} onChangeText={setPasswordInput} placeholder="Password"/>
 
           <Pressable style={styles.button.base} onPress={() => register()}>
             <Text style={styles.buttonText}>Submit</Text>
@@ -110,11 +110,16 @@ export function LoginScreen({ navigation, route }) {
             style={styles.textInput}
             value={emailInput}
             onChangeText={setEmailInput}
+            autoCorrect={false}
+            autoCapitalize="none"
           />
           <TextInput
             style={styles.textInput}
             value={passWordInput}
             onChangeText={setPasswordInput}
+            autoCorrect={false}
+            autoCapitalize="none"
+            secureTextEntry={true}
           />
           <Pressable onPress={() => login()} style={styles.button.base}>
             <Text style={styles.buttonText}>Login</Text>

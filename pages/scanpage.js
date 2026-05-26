@@ -306,7 +306,7 @@ export default function ScanPage() {
           type: "image/jpeg",
         });
 
-        const resp = await fetch("http://192.168.0.169:8000/getId/", {
+        const resp = await fetch("http://188.166.7.17:8000/getId/", {
           method: "POST",
           body: formdata,
           headers: { "Content-Type": "multipart/form-data" },
@@ -358,7 +358,9 @@ export default function ScanPage() {
 
       <CustomModal
         visible={showAddCardsModal}
-        onClose={() => setShowAddCardsModal(!showAddCardsModal)}
+        onClose={() => {
+            setIsProcessingImage(false)
+            setShowAddCardsModal(!showAddCardsModal)}}
       >
         <View style={{ height: 600, width: "100%" }}>
           <FlatList
