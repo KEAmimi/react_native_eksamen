@@ -1,6 +1,18 @@
 # Urza's helper
 An app for managing your magic the gathering collection
  - VIDEO DEMO: https://youtube.com/shorts/2HR-Mv6dQ3A?feature=share
+
+## How to run the project locally
+* Clone the project to your computer
+* Install the packages in package.json
+* Run the app with "npx expo"
+* download the "Expo Go" app to your phone
+* To use the scanning feature:
+  * Set up the API from the following github repo: https://github.com/safirestorm/UrzasLittleHelper
+  * run it with fastapi dev API.py --host 0.0.0.0
+  * Identify your local network IP adress
+  * In "scanPage.js" line 309, update the IP adress to your PC's adress
+
 ### Features
 * Create a user with e-mail and password
 * View your own, private collection
